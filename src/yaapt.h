@@ -1,54 +1,56 @@
 #ifndef __YAAPT_H
 #define __YAAPT_H
 
+#include <Arduino.h>
 #include <vector>
+#include <initializer_list>
 
 #include "yaapt_config.h"
 
-#include <Arduino.h>
+// using namespace std;
 
-typedef enum : char {
-    CHANNEL_NONE = 0x00,
-    CHANNEL_LOG = 'L',
-    CHANNEL_PLOT = 'P',
-    CHANNEL_RAW = 'R',
-    CHANNEL_COMMAND = 'C',
-    CHANNEL_DATA = 'D'
-} ChannelType_t;
 
-typedef enum {
-    FIELD_INIT_START = 0x00,
-    FIELD_VERSION = 'V',
-    FIELD_CHANNEL_DESC_START = 0x01,
-        FIELD_CHANNEL_TYPE = 0x02,
-        FIELD_CHANNEL_NAME = 0x03,
-        FIELD_CHANNEL_CONTENTS = 0x04,
-        FIELD_CHANNEL_DESC_END = 0x0E,
-    FIELD_INIT_END = 0x0F,
-    FIELD_STRING = 'S',
-    FIELD_FLOAT = 'F',
-    FIELD_DOUBLE = 'D',
-    FIELD_UINT8_T = '8',
-    FIELD_INT8_T = '7',
-    FIELD_UINT32_T = 'U',
-    FIELD_INT32_T = 'S'
-} FieldType_t;
+/* YLog Ratatouillie */
+typedef enum loglevel_t : uint8_t 
+{
+	LOGLEVEL_DEBUG = 'D',
+	LOGLEVEL_INFO = 'I',
+	LOGLEVEL_WARNING = 'W',
+	LOGLEVEL_ERROR = 'E'
+} yaapt_loglevel_t;
+
+#define DBG(msg, ...)      YAAPT_LOG_NAME.log(LOGLEVEL_DEBUG,   __LINE__, __FILE__, __FUNCTION__, msg, ##__VA_ARGS__)
+#define INFO(msg, ...)     YAAPT_LOG_NAME.log(LOGLEVEL_INFO,    __LINE__, __FILE__, __FUNCTION__, msg, ##__VA_ARGS__)
+#define WARNING(msg, ...)  YAAPT_LOG_NAME.log(LOGLEVEL_WARNING, __LINE__, __FILE__, __FUNCTION__, msg, ##__VA_ARGS__)
+#define ERROR(msg, ...)    YAAPT_LOG_NAME.log(LOGLEVEL_ERROR,   __LINE__, __FILE__, __FUNCTION__, msg, ##__VA_ARGS__)
+
+/* Meta Data */
+
+enum ChannelType_t : uint8_t;
 
 class YaaptChannel;
 
 class Yaapt
 {
     public:
-        Yaapt(Print& port);
-        ~Yaapt() {};
+        Yaapt(Stream&);
 
-        bool    begin();
+        bool begin();
+
+        // Channels only:
         uint8_t registerChannel(YaaptChannel* c);
-        size_t  write(const uint8_t *buffer, size_t size);
+
+        // exposed from serial
+        size_t write(const uint8_t *buf, size_t len);
+        size_t write(const char *);
+        size_t write(const uint8_t);
+        size_t write(const uint32_t);
+        size_t write(const float);
+        size_t write(const double);
 
     private:
         std::vector<YaaptChannel*> _channels;
-        Print& _port;
+        Stream& _stream;
 
         // Disable copy-constructor, assignment operator
         Yaapt(const Yaapt&);
@@ -62,11 +64,13 @@ class YaaptChannel
 
         const char* name();
         uint8_t channel_id();
-        const ChannelType_t channel_type = CHANNEL_NONE;
-        const char* channel_content_descriptor = "";
 
     protected:
+        virtual ChannelType_t channel_type() = 0;
+        // virtual const char* channel_descriptor() = 0;
+
         size_t  write(const uint8_t *buffer, size_t size);
+        size_t  write(const char* str);
 
         Yaapt& _y;
         uint8_t _channel_id = 0;
@@ -76,29 +80,55 @@ class YaaptChannel
         // Disable copy-constructor, assignment operator
         YaaptChannel(const YaaptChannel&);
         YaaptChannel& operator=(const YaaptChannel&);
+
+        friend class Yaapt;
 };
 
 class YLogChannel : public YaaptChannel
 {
     public:
         YLogChannel(Yaapt& y, const char* name = "log") : YaaptChannel(y, name) {};
+        ChannelType_t channel_type();
 
-        const ChannelType_t channel_type = CHANNEL_LOG;
-        const char* channel_content_descriptor = "S"; //{FIELD_STRING, 0};
+        void log(const yaapt_loglevel_t, const uint32_t linenr, const char* file, const char* function, const char* format, ...) __attribute__ ((format (printf, 6, 7)));
+};
 
-        void debug(const char* fmt, ...) __attribute__ ((format (printf, 2, 3)));
+class YDataChannel : public YaaptChannel
+{
+    public:
+        YDataChannel(Yaapt& y, const char* name) : YaaptChannel(y, name) {};
+        size_t  write(const uint8_t *buffer, size_t size);
+        ChannelType_t channel_type();
+};
 
+class YPrintChannel : public YaaptChannel, public Print
+{
+    public:
+        YPrintChannel(Yaapt& y, const char* name) : YaaptChannel(y, name) {};
+        ChannelType_t channel_type();
+    
+    private:
+        size_t write(const uint8_t* buffer, size_t size);
+        size_t write(uint8_t c);
 };
 
 class YPlotChannel : public YaaptChannel
 {
     public:
         YPlotChannel(Yaapt& y, const char* name) : YaaptChannel(y, name) {};
+        ChannelType_t channel_type();
 
-        const ChannelType_t channel_type = CHANNEL_PLOT;
-        const char* channel_content_descriptor = "FF"; // {FIELD_FLOAT, FIELD_FLOAT, 0};
-
-        void write(uint16_t, uint16_t);
+        void send(std::initializer_list<int32_t>);
+        void send(std::initializer_list<uint32_t>);
+        void send(std::initializer_list<float>);
+        void send(std::initializer_list<double>);
+        // void send(float);
+        // void send(float, float);
+        // void send(double);
+        // void send(double, double);
 };
+
+extern Yaapt YAAPT_NAME;
+extern YLogChannel YAAPT_LOG_NAME;
 
 #endif // __YAAPT.H
