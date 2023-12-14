@@ -107,7 +107,7 @@ size_t Yaapt::write(const uint8_t *buffer, size_t size)
 
 size_t Yaapt::write(const char *str)
 {
-    return _stream.write(str, strlen(str));    
+    return _stream.write(str, strlen(str) + 1);    
 };
 
 size_t Yaapt::write(const uint8_t b)
@@ -217,6 +217,7 @@ size_t YPrintChannel::write(const uint8_t* buffer, size_t size)
 
 size_t YPrintChannel::write(uint8_t c)
 { 
+    Serial.println("write(char)");
     return write(&c, 1); 
 };
 
